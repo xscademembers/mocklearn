@@ -685,11 +685,11 @@ export const Interview: React.FC = () => {
     const pieData = pieDataRaw.length > 0 ? pieDataRaw : [{ name: 'N/A', value: 1, color: 'hsl(0,0%,70%)' }];
 
     return (
-      <div className="max-w-6xl mx-auto space-y-8 sm:space-y-12 animate-fade-in-up pb-12 sm:pb-20 px-4 sm:px-6">
+      <div className="max-w-6xl mx-auto space-y-6 sm:space-y-8 animate-fade-in-up pb-12 sm:pb-20 px-4 sm:px-6">
         <div className="text-center space-y-3 sm:space-y-4 pt-4 sm:pt-8">
            <Badge className="bg-green-100 text-green-800 hover:bg-green-200 border-green-200 px-3 sm:px-4 py-1 text-xs sm:text-sm">Evaluation Complete</Badge>
            <ResultTypingHeading />
-           <p className="text-sm sm:text-xl text-muted-foreground max-w-2xl mx-auto">Detailed breakdown of your mock interview session</p>
+           <p className="text-base sm:text-xl text-muted-foreground max-w-2xl mx-auto">Detailed breakdown of your mock interview session</p>
            
            <Button 
              onClick={handleDownloadReport} 
@@ -701,18 +701,65 @@ export const Interview: React.FC = () => {
            </Button>
         </div>
 
-        {/* Bar & Pie Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
+        {/* Executive Summary + Strengths/Weaknesses — no gap below */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+           <Card className="lg:col-span-2 border-indigo-100 shadow-lg">
+             <CardHeader className="pb-2 sm:pb-3">
+               <CardTitle className="text-lg sm:text-xl">Executive Summary</CardTitle>
+             </CardHeader>
+             <CardContent className="pt-0">
+               <p className="text-base sm:text-[18px] leading-relaxed text-muted-foreground">{report.summary}</p>
+             </CardContent>
+           </Card>
+
+           <div className="space-y-3 sm:space-y-4">
+             <Card className="border-green-100 bg-green-50/30">
+               <CardHeader className="pb-1 sm:pb-2">
+                 <CardTitle className="text-green-700 text-base sm:text-lg flex items-center gap-2">
+                   <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5 shrink-0" /> Strengths (top 3–5)
+                 </CardTitle>
+               </CardHeader>
+               <CardContent className="pt-0">
+                 <ul className="space-y-2 sm:space-y-2.5">
+                   {report.strengths.map((s, i) => (
+                     <li key={i} className="flex items-start gap-2 text-sm sm:text-[18px] leading-snug text-green-900">
+                       <span className="mt-2 h-1.5 w-1.5 rounded-full bg-green-600 shrink-0" aria-hidden /> {s}
+                     </li>
+                   ))}
+                 </ul>
+               </CardContent>
+             </Card>
+             <Card className="border-amber-100 bg-amber-50/30">
+               <CardHeader className="pb-1 sm:pb-2">
+                 <CardTitle className="text-amber-700 text-base sm:text-lg flex items-center gap-2">
+                   <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5 shrink-0" /> Weaknesses (top 3–5)
+                 </CardTitle>
+               </CardHeader>
+               <CardContent className="pt-0">
+                 <ul className="space-y-2 sm:space-y-2.5">
+                   {report.weaknesses.map((w, i) => (
+                     <li key={i} className="flex items-start gap-2 text-sm sm:text-[18px] leading-snug text-amber-900">
+                       <span className="mt-2 h-1.5 w-1.5 rounded-full bg-amber-600 shrink-0" aria-hidden /> {w}
+                     </li>
+                   ))}
+                 </ul>
+               </CardContent>
+             </Card>
+           </div>
+        </div>
+
+        {/* Bar & Pie Charts — directly below summary, no gap */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
           <Card className="overflow-hidden">
-            <CardHeader>
-              <CardTitle className="text-lg">Score Overview</CardTitle>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base sm:text-lg">Score Overview</CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
-              <div className="h-64 w-full">
+              <div className="h-56 sm:h-64 w-full min-h-[200px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <RechartsBarChart data={scoreBarData} layout="vertical" margin={{ left: 8, right: 8 }}>
-                    <XAxis type="number" domain={[0, 100]} />
-                    <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 12 }} />
+                    <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 12 }} />
+                    <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 12 }} />
                     <Tooltip />
                     <Bar dataKey="score" radius={[0, 4, 4, 0]} />
                   </RechartsBarChart>
@@ -721,11 +768,11 @@ export const Interview: React.FC = () => {
             </CardContent>
           </Card>
           <Card className="overflow-hidden">
-            <CardHeader>
-              <CardTitle className="text-lg">Strengths vs Areas to Improve</CardTitle>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base sm:text-lg">Strengths vs Areas to Improve</CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
-              <div className="h-64 w-full">
+              <div className="h-56 sm:h-64 w-full min-h-[200px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -734,7 +781,7 @@ export const Interview: React.FC = () => {
                       nameKey="name"
                       cx="50%"
                       cy="50%"
-                      outerRadius={80}
+                      outerRadius={70}
                       label={({ name, value }) => `${name}: ${value}`}
                     >
                       {pieData.map((entry, i) => (
@@ -750,7 +797,7 @@ export const Interview: React.FC = () => {
           </Card>
         </div>
 
-        {/* High Level Scores: Overall /100, Communication, Technical, JD Match, Thinking, Hiring % */}
+        {/* Score cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 sm:gap-4">
            <ScoreCard title="Overall" score={report.overallScore} icon={BarChart} colorClass="text-indigo-600" />
            <ScoreCard title="Communication" score={report.communicationScore} icon={MessageSquare} colorClass="text-blue-500" />
@@ -761,67 +808,20 @@ export const Interview: React.FC = () => {
            )}
         </div>
 
-        {/* Summary Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-8">
-           <Card className="lg:col-span-2 border-indigo-100 shadow-lg">
-             <CardHeader className="pb-3 sm:pb-4">
-               <CardTitle className="text-lg sm:text-xl">Executive Summary</CardTitle>
-             </CardHeader>
-             <CardContent className="pt-0">
-               <p className="text-sm sm:text-lg leading-relaxed text-muted-foreground">{report.summary}</p>
-             </CardContent>
-           </Card>
-
-           <div className="space-y-4 sm:space-y-6">
-             <Card className="border-green-100 bg-green-50/30">
-               <CardHeader className="pb-2">
-                 <CardTitle className="text-green-700 text-sm sm:text-base flex items-center gap-2">
-                   <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5" /> Strengths (top 3–5)
-                 </CardTitle>
-               </CardHeader>
-               <CardContent className="pt-0">
-                 <ul className="space-y-1.5 sm:space-y-2">
-                   {report.strengths.map((s, i) => (
-                     <li key={i} className="flex items-start gap-2 text-xs sm:text-sm text-green-900">
-                       <span className="mt-1.5 h-1 w-1 sm:h-1.5 sm:w-1.5 rounded-full bg-green-600 shrink-0" /> {s}
-                     </li>
-                   ))}
-                 </ul>
-               </CardContent>
-             </Card>
-             <Card className="border-amber-100 bg-amber-50/30">
-               <CardHeader className="pb-2">
-                 <CardTitle className="text-amber-700 text-sm sm:text-base flex items-center gap-2">
-                   <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5" /> Weaknesses (top 3–5)
-                 </CardTitle>
-               </CardHeader>
-               <CardContent className="pt-0">
-                 <ul className="space-y-1.5 sm:space-y-2">
-                   {report.weaknesses.map((w, i) => (
-                     <li key={i} className="flex items-start gap-2 text-xs sm:text-sm text-amber-900">
-                       <span className="mt-1.5 h-1 w-1 sm:h-1.5 sm:w-1.5 rounded-full bg-amber-600 shrink-0" /> {w}
-                     </li>
-                   ))}
-                 </ul>
-               </CardContent>
-             </Card>
-           </div>
-        </div>
-
         {/* Skill Gap Analysis */}
         {report.skillGapAnalysis && report.skillGapAnalysis.length > 0 && (
           <Card className="border-violet-200 bg-violet-50/30">
             <CardHeader className="pb-2">
-              <CardTitle className="text-violet-800 text-sm sm:text-base flex items-center gap-2">
-                <Target className="h-4 w-4 sm:h-5 sm:w-5" /> Skill Gap Analysis
+              <CardTitle className="text-violet-800 text-base sm:text-lg flex items-center gap-2">
+                <Target className="h-4 w-4 sm:h-5 sm:w-5 shrink-0" /> Skill Gap Analysis
               </CardTitle>
-              <p className="text-xs text-violet-700/80">Areas missing or weak for the target role</p>
+              <p className="text-sm sm:text-base text-violet-700/80">Areas missing or weak for the target role</p>
             </CardHeader>
             <CardContent className="pt-0">
-              <ul className="space-y-1.5 sm:space-y-2">
+              <ul className="space-y-2 sm:space-y-2.5">
                 {report.skillGapAnalysis.map((item, i) => (
-                  <li key={i} className="flex items-start gap-2 text-xs sm:text-sm text-violet-900">
-                    <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-violet-500 shrink-0" /> {item}
+                  <li key={i} className="flex items-start gap-2 text-sm sm:text-[18px] leading-snug text-violet-900">
+                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-violet-500 shrink-0" aria-hidden /> {item}
                   </li>
                 ))}
               </ul>
@@ -832,11 +832,11 @@ export const Interview: React.FC = () => {
         {/* Hiring Probability (if not in score cards) */}
         {report.hiringProbability != null && (
           <Card className="border-emerald-200 bg-emerald-50/20">
-            <CardContent className="py-4 sm:py-6 flex items-center gap-4">
+            <CardContent className="py-4 sm:py-6 flex flex-col sm:flex-row items-start sm:items-center gap-4">
               <div className="text-3xl sm:text-4xl font-bold text-emerald-700">{report.hiringProbability}%</div>
               <div>
-                <h3 className="font-semibold text-emerald-800">Hiring Probability</h3>
-                <p className="text-sm text-muted-foreground">Estimated fit for the job based on your responses</p>
+                <h3 className="font-semibold text-emerald-800 text-base sm:text-lg">Hiring Probability</h3>
+                <p className="text-sm sm:text-[18px] text-muted-foreground">Estimated fit for the job based on your responses</p>
               </div>
             </CardContent>
           </Card>
@@ -845,16 +845,16 @@ export const Interview: React.FC = () => {
         {/* Suggested Improvements */}
         {report.improvementSuggestions && report.improvementSuggestions.length > 0 && (
           <Card className="border-blue-100 bg-blue-50/30">
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-2 sm:pb-3">
               <CardTitle className="text-blue-700 flex items-center gap-2 text-base sm:text-lg">
-                <Lightbulb className="h-4 w-4 sm:h-5 sm:w-5" /> Suggested Improvements
+                <Lightbulb className="h-4 w-4 sm:h-5 sm:w-5 shrink-0" /> Suggested Improvements
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
               <ul className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
                 {report.improvementSuggestions.map((s, i) => (
-                  <li key={i} className="flex items-start gap-2 sm:gap-3 text-xs sm:text-sm text-blue-900 bg-white p-3 sm:p-4 rounded-lg border border-blue-100">
-                    <span className="flex items-center justify-center h-5 w-5 sm:h-6 sm:w-6 rounded-full bg-blue-500 text-white text-xs font-bold shrink-0">{i + 1}</span>
+                  <li key={i} className="flex items-start gap-2 sm:gap-3 text-sm sm:text-[18px] leading-snug text-blue-900 bg-white p-3 sm:p-4 rounded-lg border border-blue-100">
+                    <span className="flex items-center justify-center h-6 w-6 sm:h-7 sm:w-7 rounded-full bg-blue-500 text-white text-sm font-bold shrink-0">{i + 1}</span>
                     {s}
                   </li>
                 ))}
@@ -864,11 +864,11 @@ export const Interview: React.FC = () => {
         )}
 
         {/* Detailed Breakdown */}
-        <div className="space-y-6 sm:space-y-8">
+        <div className="space-y-4 sm:space-y-6">
            <div className="flex items-center gap-2 sm:gap-4">
-             <div className="h-px bg-border flex-1"></div>
+             <div className="h-px bg-border flex-1" aria-hidden />
              <h2 className="text-lg sm:text-2xl font-bold text-foreground text-center">Question Analysis</h2>
-             <div className="h-px bg-border flex-1"></div>
+             <div className="h-px bg-border flex-1" aria-hidden />
            </div>
 
            <div className="grid gap-4 sm:gap-6">
@@ -877,10 +877,10 @@ export const Interview: React.FC = () => {
                  <CardHeader className="bg-muted/30 pb-3 sm:pb-4 p-4 sm:p-6">
                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
                      <div className="flex items-start gap-2 sm:gap-3 flex-1 min-w-0">
-                       <span className="flex items-center justify-center h-6 w-6 sm:h-8 sm:w-8 rounded-full bg-indigo-600 text-white font-bold text-xs sm:text-sm shrink-0">
+                       <span className="flex items-center justify-center h-7 w-7 sm:h-8 sm:w-8 rounded-full bg-indigo-600 text-white font-bold text-sm shrink-0">
                          {idx + 1}
                        </span>
-                       <h3 className="text-sm sm:text-lg font-semibold leading-tight">{item.question}</h3>
+                       <h3 className="text-base sm:text-lg font-semibold leading-tight">{item.question}</h3>
                      </div>
                      <Badge variant={item.score > 7 ? 'default' : item.score > 4 ? 'secondary' : 'destructive'} className="w-fit text-xs shrink-0">
                        {item.score}/10
@@ -891,28 +891,28 @@ export const Interview: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                       <div>
                         <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1 sm:gap-2">
-                          <Mic className="h-3 w-3" /> Your Answer
+                          <Mic className="h-3 w-3 shrink-0" /> Your Answer
                         </h4>
-                        <div className="p-3 sm:p-4 rounded-lg bg-muted/20 text-xs sm:text-sm italic text-foreground/80 border">
+                        <div className="p-3 sm:p-4 rounded-lg bg-muted/20 text-sm sm:text-[18px] italic text-foreground/80 border leading-relaxed">
                           "{item.answer}"
                         </div>
                       </div>
                       <div>
                          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1 sm:gap-2">
-                          <MessageSquare className="h-3 w-3" /> AI Feedback
+                          <MessageSquare className="h-3 w-3 shrink-0" /> AI Feedback
                         </h4>
-                        <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                        <p className="text-sm sm:text-[18px] text-muted-foreground leading-relaxed">
                           {item.feedback}
                         </p>
                       </div>
                     </div>
                     
                     <div className="relative overflow-hidden rounded-lg bg-indigo-50/50 p-3 sm:p-4 border border-indigo-100">
-                       <div className="absolute top-0 left-0 w-1 h-full bg-indigo-400"></div>
+                       <div className="absolute top-0 left-0 w-1 h-full bg-indigo-400" aria-hidden />
                        <h4 className="text-xs font-bold text-indigo-700 uppercase tracking-wider mb-1 flex items-center gap-1 sm:gap-2">
-                         <RefreshCw className="h-3 w-3" /> Better Answer
+                         <RefreshCw className="h-3 w-3 shrink-0" /> Better Answer
                        </h4>
-                       <p className="text-xs sm:text-sm font-medium text-indigo-900 leading-relaxed">
+                       <p className="text-sm sm:text-[18px] font-medium text-indigo-900 leading-relaxed">
                          {item.improvedAnswer}
                        </p>
                     </div>
@@ -925,11 +925,11 @@ export const Interview: React.FC = () => {
         {/* Feedback after interview */}
         <Card className="border-primary/20 bg-primary/5">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MessageSquare className="h-5 w-5" />
+            <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <MessageSquare className="h-5 w-5 shrink-0" />
               Share your feedback
             </CardTitle>
-            <p className="text-sm text-muted-foreground">Your feedback helps us improve the interview experience.</p>
+            <p className="text-sm sm:text-base text-muted-foreground">Your feedback helps us improve the interview experience.</p>
           </CardHeader>
           <CardContent>
             {feedbackSubmitted ? (
