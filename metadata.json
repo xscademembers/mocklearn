@@ -1,0 +1,7 @@
+{
+  "name": "MockLearn.com MVP",
+  "description": "AI-powered mock interview platform utilizing resume parsing and job description analysis to conduct personalized voice-based interviews.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

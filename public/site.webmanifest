@@ -1,0 +1,17 @@
+{
+  "name": "MockLearn - AI Mock Interview Platform",
+  "short_name": "MockLearn",
+  "description": "AI-powered mock interview platform for interview practice",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "theme_color": "#059669",
+  "background_color": "#ffffff",
+  "display": "standalone",
+  "start_url": "/"
+}
+

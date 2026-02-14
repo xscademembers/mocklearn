@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Background circle -->
+  <circle cx="32" cy="32" r="30" fill="#059669"/>
+  
+  <!-- Bot head -->
+  <rect x="18" y="16" width="28" height="24" rx="4" fill="white"/>
+  
+  <!-- Bot eyes -->
+  <circle cx="26" cy="26" r="3" fill="#059669"/>
+  <circle cx="38" cy="26" r="3" fill="#059669"/>
+  
+  <!-- Bot mouth (smile) -->
+  <path d="M 24 32 Q 32 36 40 32" stroke="#059669" stroke-width="2" stroke-linecap="round" fill="none"/>
+  
+  <!-- Speech bubble indicator -->
+  <circle cx="48" cy="18" r="4" fill="#10b981"/>
+  <path d="M 48 22 L 45 26 L 48 26 Z" fill="#10b981"/>
+</svg>
+
