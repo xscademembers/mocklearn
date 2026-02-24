@@ -9,6 +9,9 @@
     "preview": "vite preview",
     "start": "node server/index.js"
   },
+  "overrides": {
+    "minimatch": "^10.2.1"
+  },
   "dependencies": {
     "react": "^19.2.0",
     "@google/genai": "^1.30.0",
