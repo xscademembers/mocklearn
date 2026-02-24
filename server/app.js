@@ -5,7 +5,6 @@ import contactRoutes from './routes/contact.js';
 import companiesRoutes from './routes/companies.js';
 import feedbackRoutes from './routes/feedback.js';
 import adminRoutes from './routes/admin.js';
-import interviewRoutes from './routes/interview.js';
 
 const app = express();
 
@@ -28,7 +27,6 @@ app.use('/api/contact', contactRoutes);
 app.use('/api/companies', companiesRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/interview', interviewRoutes);
 
 app.use((err, _req, res, _next) => {
   console.error('[API error]', err);

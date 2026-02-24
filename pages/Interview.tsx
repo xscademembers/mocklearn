@@ -63,8 +63,6 @@ export const Interview: React.FC = () => {
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [feedbackError, setFeedbackError] = useState('');
 
-  const [errorMessage, setErrorMessage] = useState('');
-
   // Recording State
   const [isRecording, setIsRecording] = useState(false);
   const [currentTranscript, setCurrentTranscript] = useState('');
@@ -148,11 +146,6 @@ export const Interview: React.FC = () => {
 
     setStatus(InterviewStatus.PARSING);
     try {
-      const checkRes = await fetch('/api/interview/check', { credentials: 'include' });
-      const checkData = await checkRes.json().catch(() => ({}));
-      if (!checkRes.ok || !checkData.keyConfigured) {
-        throw new Error(checkData.error || 'API key not configured on server.');
-      }
       const firstQuestion = await GeminiService.startInterview(
         resumeInputMode === 'file' ? resumeFile : null,
         resumeInputMode === 'text' ? resumeText : '',
@@ -162,7 +155,6 @@ export const Interview: React.FC = () => {
       setStatus(InterviewStatus.READY);
     } catch (error) {
       console.error(error);
-      setErrorMessage(error instanceof Error ? error.message : 'Something went wrong');
       setStatus(InterviewStatus.ERROR);
     }
   };
@@ -222,7 +214,6 @@ export const Interview: React.FC = () => {
       setStatus(InterviewStatus.COMPLETED);
     } catch (error) {
       console.error(error);
-      setErrorMessage(error instanceof Error ? error.message : 'Something went wrong');
       setStatus(InterviewStatus.ERROR);
     }
   };
@@ -997,11 +988,9 @@ export const Interview: React.FC = () => {
           <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-red-100 flex items-center justify-center">
             <AlertCircle className="h-7 w-7 sm:h-8 sm:w-8 text-red-600" />
           </div>
-          <div className="text-center space-y-2 max-w-md">
+          <div className="text-center space-y-2">
             <h2 className="text-lg sm:text-xl font-semibold">Something went wrong</h2>
-            <p className="text-muted-foreground text-sm sm:text-base">
-              {errorMessage || 'Add GEMINI_API_KEY or API_KEY to .env.local in the project root, then restart the dev server (npm run dev).'}
-            </p>
+            <p className="text-muted-foreground text-sm">Please check your API key and try again.</p>
           </div>
           <Button onClick={() => window.location.reload()} className="bg-indigo-600 hover:bg-indigo-700">
             Try Again
