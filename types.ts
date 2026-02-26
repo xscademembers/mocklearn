@@ -47,6 +47,17 @@ export enum InterviewStatus {
   ERROR = 'error'
 }
 
+/** Saved state when user chooses "Resume later" from end-session modal */
+export interface PausedInterviewData {
+  questions: InterviewQuestion[];
+  answers: Record<number, string>;
+  currentQuestionIndex: number;
+  jdText: string;
+  resumeText: string;
+  resumeInputMode: 'file' | 'text';
+  savedAt: number;
+}
+
 export interface InterviewSession {
   resumeText: string;
   jdText: string;

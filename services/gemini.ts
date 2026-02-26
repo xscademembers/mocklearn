@@ -29,7 +29,7 @@ const startInterview = async (resumeFile: File | null, resumeText: string, jdTex
       ${QUESTION_RUBRIC}
       
       **Interview structure (strict):**
-      - Total questions per mock: 10–12. Ask 2–3 questions max per experience point, then move on.
+      - Total questions per mock: 10–14. Ask 2–3 questions max per experience point, then move on.
       - Use a mix of: (1) Technical, (2) Behavioral, (3) Scenario-based questions. Link each to JD/role context where possible.
       - If the resume suggests a fresher (recent grad, college projects, internships, little full-time experience), prefer fresher-appropriate questions (college projects, basic concepts, simplified scenarios). Otherwise use experienced-level technical/behavioral/scenario questions.
       - Do NOT give any feedback during the interview; only ask questions. Answers are captured for evaluation later.
@@ -37,7 +37,8 @@ const startInterview = async (resumeFile: File | null, resumeText: string, jdTex
       **Goal:** Generate the **first question** (id: 1).
       - It MUST be an introductory question: e.g. "Tell me about yourself" or "Walk me through your background".
       - Keep it short and conversational.
-      - Return JSON with 'id', 'question', and optional 'context' (e.g. "intro" or experience point / JD link).
+      - The optional 'context' field must be a SHORT label only (e.g. "Technical – Working capital", "Behavioral – Teamwork", "Scenario – Budget overrun"). Do NOT repeat or restate the question text in 'context'.
+      - Return JSON with 'id', 'question', and optional 'context'.
       
       Resume:
       ${resumeText}
@@ -109,12 +110,13 @@ const getNextQuestion = async (
       ${QUESTION_RUBRIC}
       
       **Rules:**
-      - 2–3 questions per experience point, then move on. Total: 10–12 per mock. Mix: technical, behavioral, scenario-based. No feedback—only capture answers.
+      - 2–3 questions per experience point, then move on. Total: 10–14 per mock. Mix: technical, behavioral, scenario-based. No feedback—only capture answers.
       - If resume suggests fresher: use fresher-appropriate technical/behavioral/scenario questions. Else use experienced-level.
       - Current history (${totalQuestions} Q&A): ${JSON.stringify(previousExchanges)}
       - Latest: Q: "${lastExchange.question}" | Candidate: "${lastExchange.answer}"
-      - If 2–3 Q on current point: move to next (resume/JD). If total would reach 10–12: set isComplete true, no nextQuestion.
+      - If 2–3 Q on current point: move to next (resume/JD). If total would reach 14: set isComplete true, no nextQuestion.
       - Else return nextQuestion (id: ${totalQuestions + 1}), short (1–2 sentences). If "I don't know" or very weak: move to next topic.
+      - If you include a 'context' field on nextQuestion, keep it as a SHORT label (e.g. "Technical – Excel", "Behavioral – Time management"). Do NOT repeat the question text in 'context'.
       
       Resume:
       ${resumeText}

@@ -41,7 +41,9 @@ import {
   Send,
 } from 'lucide-react';
 import { GeminiService } from '../services/gemini';
-import { InterviewQuestion, InterviewReport, InterviewStatus } from '../types';
+import { InterviewQuestion, InterviewReport, InterviewStatus, PausedInterviewData } from '../types';
+
+const PAUSED_INTERVIEW_KEY = 'mocklearn_paused_interview';
 
 export const Interview: React.FC = () => {
   // State
@@ -62,6 +64,17 @@ export const Interview: React.FC = () => {
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [feedbackError, setFeedbackError] = useState('');
+
+  // Global error + report download state
+  const [errorMessage, setErrorMessage] = useState('');
+  const [downloadingReport, setDownloadingReport] = useState(false);
+
+  // Ref for PDF capture
+  const reportRef = useRef<HTMLDivElement | null>(null);
+
+  // End session modal + resume
+  const [showEndSessionModal, setShowEndSessionModal] = useState(false);
+  const [pausedInterview, setPausedInterview] = useState<PausedInterviewData | null>(null);
 
   // Recording State
   const [isRecording, setIsRecording] = useState(false);
@@ -91,6 +104,24 @@ export const Interview: React.FC = () => {
       bottomRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [currentTranscript, status]);
+
+  // Load paused interview from localStorage on mount and pre-fill form
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PAUSED_INTERVIEW_KEY);
+      if (raw) {
+        const data = JSON.parse(raw) as PausedInterviewData;
+        if (data?.questions?.length && typeof data.currentQuestionIndex === 'number') {
+          setPausedInterview(data);
+          setJdText(data.jdText ?? '');
+          setResumeText(data.resumeText ?? '');
+          setResumeInputMode(data.resumeInputMode ?? 'file');
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   // Initialize Speech Recognition
   useEffect(() => {
@@ -155,6 +186,7 @@ export const Interview: React.FC = () => {
       setStatus(InterviewStatus.READY);
     } catch (error) {
       console.error(error);
+      setErrorMessage(error instanceof Error ? error.message : 'Something went wrong');
       setStatus(InterviewStatus.ERROR);
     }
   };
@@ -173,8 +205,8 @@ export const Interview: React.FC = () => {
     }));
     history[currentQuestionIndex] = { question: currentQ.question, answer: answerText };
 
-    // Check limits
-    if (questions.length >= 12) {
+    // Check limits (max 14 questions per interview)
+    if (questions.length >= 14) {
       await finishInterview(history);
       return;
     }
@@ -204,6 +236,7 @@ export const Interview: React.FC = () => {
 
   const finishInterview = async (transcript: { question: string; answer: string }[]) => {
     setStatus(InterviewStatus.EVALUATING);
+    setShowEndSessionModal(false);
     try {
       const reportData = await GeminiService.evaluateInterviewSession(
         transcript,
@@ -214,8 +247,93 @@ export const Interview: React.FC = () => {
       setStatus(InterviewStatus.COMPLETED);
     } catch (error) {
       console.error(error);
+      setErrorMessage(error instanceof Error ? error.message : 'Something went wrong');
       setStatus(InterviewStatus.ERROR);
     }
+  };
+
+  /** Build transcript for questions that have an answer (for partial report) */
+  const getCompletedHistory = (): { question: string; answer: string }[] => {
+    return questions
+      .filter((q) => (answers[q.id] ?? '').trim().length > 0)
+      .map((q) => ({ question: q.question, answer: (answers[q.id] ?? '').trim() }));
+  };
+
+  const handleGeneratePartialReport = () => {
+    const history = getCompletedHistory();
+    if (history.length > 0) finishInterview(history);
+  };
+
+  const handleResumeLater = () => {
+    const data: PausedInterviewData = {
+      questions,
+      answers: { ...answers },
+      currentQuestionIndex,
+      jdText,
+      resumeText,
+      resumeInputMode,
+      savedAt: Date.now(),
+    };
+    try {
+      localStorage.setItem(PAUSED_INTERVIEW_KEY, JSON.stringify(data));
+    } catch {
+      // quota or disabled
+    }
+    setPausedInterview(data);
+    setShowEndSessionModal(false);
+    setStatus(InterviewStatus.IDLE);
+    setQuestions([]);
+    setAnswers({});
+    setCurrentQuestionIndex(0);
+    setCurrentTranscript('');
+  };
+
+  const handleStartOver = () => {
+    try {
+      localStorage.removeItem(PAUSED_INTERVIEW_KEY);
+    } catch {
+      // ignore
+    }
+    setPausedInterview(null);
+    setShowEndSessionModal(false);
+    setStatus(InterviewStatus.IDLE);
+    setQuestions([]);
+    setAnswers({});
+    setCurrentQuestionIndex(0);
+    setCurrentTranscript('');
+    setReport(null);
+  };
+
+  const restoreFromPaused = () => {
+    if (!pausedInterview) return;
+    const needFile = pausedInterview.resumeInputMode === 'file' && !resumeFile;
+    if (needFile) return; // wait for user to re-upload
+    setQuestions(pausedInterview.questions);
+    setAnswers(pausedInterview.answers);
+    setCurrentQuestionIndex(pausedInterview.currentQuestionIndex);
+    setJdText(pausedInterview.jdText);
+    setResumeText(pausedInterview.resumeText);
+    setResumeInputMode(pausedInterview.resumeInputMode);
+    setPausedInterview(null);
+    try {
+      localStorage.removeItem(PAUSED_INTERVIEW_KEY);
+    } catch {
+      // ignore
+    }
+    setStatus(InterviewStatus.IN_PROGRESS);
+    setCurrentTranscript('');
+  };
+
+  const discardPaused = () => {
+    try {
+      localStorage.removeItem(PAUSED_INTERVIEW_KEY);
+    } catch {
+      // ignore
+    }
+    setPausedInterview(null);
+    setJdText('');
+    setResumeText('');
+    setResumeFile(null);
   };
 
   const handleFeedbackSubmit = async (e: React.FormEvent) => {
@@ -246,152 +364,80 @@ export const Interview: React.FC = () => {
     }
   };
 
-  // Download Report as PDF/HTML
-  const handleDownloadReport = () => {
-    if (!report) return;
-    
-    const reportHTML = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MockLearn Interview Report</title>
-  <style>
-    body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 40px 20px; color: #333; }
-    h1 { color: #4f46e5; text-align: center; margin-bottom: 10px; }
-    .subtitle { text-align: center; color: #666; margin-bottom: 30px; }
-    .scores { display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; margin: 30px 0; }
-    .score-card { text-align: center; padding: 20px; background: #f3f4f6; border-radius: 10px; min-width: 100px; flex: 1; }
-    .score-value { font-size: 28px; font-weight: bold; color: #4f46e5; }
-    .score-label { font-size: 12px; color: #666; margin-top: 5px; }
-    .section { margin: 30px 0; }
-    .section-title { font-size: 18px; font-weight: bold; margin-bottom: 15px; padding-bottom: 5px; border-bottom: 2px solid #4f46e5; }
-    .summary { background: #f3f4f6; padding: 20px; border-radius: 10px; line-height: 1.6; }
-    ul { padding-left: 20px; }
-    li { margin: 8px 0; }
-    .strength { color: #4f46e5; }
-    .weakness { color: #dc2626; }
-    .improvement { color: #2563eb; }
-    .qa-item { background: #f9fafb; padding: 15px; margin: 15px 0; border-radius: 10px; border-left: 4px solid #4f46e5; }
-    .qa-question { font-weight: bold; margin-bottom: 10px; font-size: 14px; }
-    .qa-answer { font-style: italic; color: #666; margin-bottom: 10px; font-size: 13px; }
-    .qa-feedback { margin: 10px 0; font-size: 13px; }
-    .qa-improved { background: #eef2ff; padding: 10px; border-radius: 5px; margin-top: 10px; font-size: 13px; }
-    .qa-score { display: inline-block; background: #4f46e5; color: white; padding: 2px 10px; border-radius: 15px; font-size: 12px; }
-    .footer { text-align: center; margin-top: 40px; color: #999; font-size: 12px; }
-    @media (max-width: 600px) {
-      .scores { flex-direction: column; }
-      .score-card { min-width: auto; }
+  // Download Report as a PDF generated from the on-screen layout
+  const handleDownloadReport = async () => {
+    if (!report || !reportRef.current || downloadingReport) return;
+    try {
+      setDownloadingReport(true);
+      const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
+        import('jspdf'),
+        import('html2canvas'),
+      ]);
+
+      const element = reportRef.current;
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        windowWidth: element.scrollWidth,
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      // Scale the captured image so the full report fits on a single page
+      let imgWidth = pageWidth;
+      let imgHeight = (canvas.height * imgWidth) / canvas.width;
+      if (imgHeight > pageHeight) {
+        const ratio = pageHeight / imgHeight;
+        imgWidth *= ratio;
+        imgHeight = pageHeight;
+      }
+      const marginX = (pageWidth - imgWidth) / 2;
+
+      pdf.addImage(imgData, 'PNG', marginX, 0, imgWidth, imgHeight);
+      pdf.save('mocklearn-interview-report.pdf');
+    } catch (err) {
+      console.error('PDF download error', err);
+      setErrorMessage('Could not generate PDF. Please try again.');
+      setStatus(InterviewStatus.ERROR);
+    } finally {
+      setDownloadingReport(false);
     }
-  </style>
-</head>
-<body>
-  <h1>🎯 MockLearn Interview Report</h1>
-  <p class="subtitle">AI-Generated Performance Analysis</p>
-  
-  <div class="scores">
-    <div class="score-card">
-      <div class="score-value">${report.overallScore}</div>
-      <div class="score-label">Overall (out of 100)</div>
-    </div>
-    <div class="score-card">
-      <div class="score-value">${report.communicationScore}%</div>
-      <div class="score-label">Communication</div>
-    </div>
-    <div class="score-card">
-      <div class="score-value">${report.technicalScore}%</div>
-      <div class="score-label">Technical</div>
-    </div>
-    <div class="score-card">
-      <div class="score-value">${report.jdMatchScore ?? 'N/A'}%</div>
-      <div class="score-label">JD Match</div>
-    </div>
-    ${report.thinkingStructureScore != null ? `<div class="score-card"><div class="score-value">${report.thinkingStructureScore}%</div><div class="score-label">Thinking</div></div>` : ''}
-    ${report.hiringProbability != null ? `<div class="score-card"><div class="score-value">${report.hiringProbability}%</div><div class="score-label">Hiring Probability</div></div>` : ''}
-  </div>
-
-  <div class="section">
-    <div class="section-title">📝 Executive Summary</div>
-    <div class="summary">${report.summary}</div>
-  </div>
-
-  <div class="section">
-    <div class="section-title">✅ Strengths (top 3–5)</div>
-    <ul>
-      ${report.strengths.map(s => `<li class="strength">${s}</li>`).join('')}
-    </ul>
-  </div>
-
-  <div class="section">
-    <div class="section-title">⚠️ Weaknesses (top 3–5)</div>
-    <ul>
-      ${report.weaknesses.map(w => `<li class="weakness">${w}</li>`).join('')}
-    </ul>
-  </div>
-
-  ${report.skillGapAnalysis && report.skillGapAnalysis.length > 0 ? `
-  <div class="section">
-    <div class="section-title">📐 Skill Gap Analysis</div>
-    <p style="color:#666;font-size:13px;">Areas missing or weak for the target JD</p>
-    <ul>
-      ${report.skillGapAnalysis.map(g => `<li class="improvement">${g}</li>`).join('')}
-    </ul>
-  </div>
-  ` : ''}
-
-  ${report.hiringProbability != null ? `
-  <div class="section">
-    <div class="section-title">🎯 Hiring Probability</div>
-    <p style="font-size:24px;font-weight:bold;color:#059669;">${report.hiringProbability}%</p>
-    <p style="color:#666;font-size:13px;">Estimated fit for the job based on your responses</p>
-  </div>
-  ` : ''}
-
-  ${report.improvementSuggestions && report.improvementSuggestions.length > 0 ? `
-  <div class="section">
-    <div class="section-title">💡 Suggested Improvements</div>
-    <ul>
-      ${report.improvementSuggestions.map(s => `<li class="improvement">${s}</li>`).join('')}
-    </ul>
-  </div>
-  ` : ''}
-
-  <div class="section">
-    <div class="section-title">📊 Question-by-Question Analysis</div>
-    ${report.questionEvaluations.map((item, idx) => `
-      <div class="qa-item">
-        <div class="qa-question">Q${idx + 1}: ${item.question}</div>
-        <div class="qa-answer">"${item.answer}"</div>
-        <span class="qa-score">Score: ${item.score}/10</span>
-        <div class="qa-feedback"><strong>Feedback:</strong> ${item.feedback}</div>
-        <div class="qa-improved"><strong>💡 Better Answer:</strong> ${item.improvedAnswer}</div>
-      </div>
-    `).join('')}
-  </div>
-
-  <div class="footer">
-    Generated by MockLearn.com | ${new Date().toLocaleDateString()}
-  </div>
-</body>
-</html>
-    `;
-    
-    const blob = new Blob([reportHTML], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `MockLearn_Interview_Report_${new Date().toISOString().split('T')[0]}.html`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
   // --- Views ---
 
-  const renderSetup = () => (
+  const renderSetup = () => {
+    const canResume = pausedInterview && (pausedInterview.resumeInputMode === 'text' || resumeFile != null);
+    const pausedCount = pausedInterview
+      ? pausedInterview.questions.filter((q) => (pausedInterview.answers[q.id] ?? '').trim().length > 0).length
+      : 0;
+
+    return (
     <div className="min-h-[calc(100vh-56px)] sm:min-h-[calc(100vh-64px)] flex flex-col justify-center max-w-4xl mx-auto py-4 sm:py-6 px-4 sm:px-6 animate-fade-in-up">
+      {pausedInterview && (
+        <Card className="mb-6 border-indigo-200 bg-indigo-50/50">
+          <CardContent className="pt-4 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <p className="font-medium text-indigo-900">Paused interview ({pausedCount} question{pausedCount !== 1 ? 's' : ''} answered)</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                {pausedInterview.resumeInputMode === 'file' && !resumeFile
+                  ? 'Re-upload your resume below, then click Resume interview.'
+                  : 'Click Resume to continue where you left off.'}
+              </p>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <Button onClick={restoreFromPaused} disabled={!canResume} className="bg-indigo-600 hover:bg-indigo-700">
+                Resume interview
+              </Button>
+              <Button variant="outline" onClick={discardPaused}>Discard</Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="text-center mb-4 sm:mb-6 space-y-1 sm:space-y-2">
         <Badge variant="secondary" className="mb-1 sm:mb-2">Start Interview</Badge>
         <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight">Configure Your Interview</h1>
@@ -488,41 +534,59 @@ export const Interview: React.FC = () => {
       </div>
 
       <div className="mt-4 sm:mt-6 flex justify-center">
-        <Button 
-          size="lg" 
-          className="w-full sm:w-auto sm:min-w-[280px] h-11 sm:h-12 text-sm sm:text-base rounded-full shadow-xl shadow-indigo-500/20 hover:shadow-indigo-500/30 transition-all bg-indigo-600 hover:bg-indigo-700"
-          disabled={
-            (resumeInputMode === 'file' ? !resumeFile : !resumeText.trim()) ||
-            status === InterviewStatus.PARSING
-          }
-          onClick={handleStartInterview}
-        >
-          {status === InterviewStatus.PARSING ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Analyzing...
-            </>
-          ) : (
-            <>Start Interview <Play className="ml-2 h-4 w-4" /></>
-          )}
-        </Button>
+        {pausedInterview ? (
+          <Button 
+            size="lg" 
+            className="w-full sm:w-auto sm:min-w-[280px] h-11 sm:h-12 text-sm sm:text-base rounded-full shadow-xl shadow-indigo-500/20 hover:shadow-indigo-500/30 transition-all bg-indigo-600 hover:bg-indigo-700"
+            disabled={!canResume || status === InterviewStatus.PARSING}
+            onClick={restoreFromPaused}
+          >
+            Resume interview <Play className="ml-2 h-4 w-4" />
+          </Button>
+        ) : (
+          <Button 
+            size="lg" 
+            className="w-full sm:w-auto sm:min-w-[280px] h-11 sm:h-12 text-sm sm:text-base rounded-full shadow-xl shadow-indigo-500/20 hover:shadow-indigo-500/30 transition-all bg-indigo-600 hover:bg-indigo-700"
+            disabled={
+              (resumeInputMode === 'file' ? !resumeFile : !resumeText.trim()) ||
+              status === InterviewStatus.PARSING
+            }
+            onClick={handleStartInterview}
+          >
+            {status === InterviewStatus.PARSING ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Analyzing...
+              </>
+            ) : (
+              <>Start Interview <Play className="ml-2 h-4 w-4" /></>
+            )}
+          </Button>
+        )}
       </div>
     </div>
-  );
+    );
+  };
 
   const renderActiveInterview = () => {
     const question = questions[currentQuestionIndex];
     const isFetching = status === InterviewStatus.FETCHING_NEXT;
+    const showContext =
+      !!question?.context &&
+      question.context.trim().length > 0 &&
+      question.context.trim().toLowerCase() !== question.question.trim().toLowerCase();
 
     return (
       <div className="max-w-4xl mx-auto min-h-[calc(100vh-140px)] flex flex-col animate-fade-in px-4 sm:px-6 py-4">
         {/* Header Status */}
         <div className="flex items-center justify-between mb-4 sm:mb-6">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <span className="text-xs sm:text-sm font-medium text-muted-foreground uppercase tracking-wider">Question {currentQuestionIndex + 1}</span>
+        <div className="flex items-center gap-2 sm:gap-3">
+           <span className="text-xs sm:text-sm font-medium text-muted-foreground uppercase tracking-wider">
+             Question {currentQuestionIndex + 1}
+           </span>
             <span className="text-xs sm:text-sm font-mono font-semibold text-primary bg-primary/10 px-2 py-1 rounded" aria-label="Elapsed time">{timerDisplay}</span>
             {isRecording && <span className="flex h-2 w-2 rounded-full bg-red-500 animate-pulse" aria-hidden></span>}
           </div>
-          <Button variant="ghost" size="sm" className="text-xs sm:text-sm text-muted-foreground hover:text-destructive h-8 px-2 sm:px-3" onClick={() => window.location.reload()}>End Session</Button>
+          <Button variant="ghost" size="sm" className="text-xs sm:text-sm text-muted-foreground hover:text-destructive h-8 px-2 sm:px-3" onClick={() => setShowEndSessionModal(true)}>End Session</Button>
         </div>
 
         {/* Main Interaction Area */}
@@ -538,7 +602,7 @@ export const Interview: React.FC = () => {
                    <h2 className="text-lg sm:text-2xl md:text-3xl font-semibold leading-tight text-foreground">
                      {question.question}
                    </h2>
-                   {question.context && (
+                   {showContext && (
                      <p className="text-muted-foreground italic text-xs sm:text-sm border-l-2 border-indigo-500/30 pl-2 sm:pl-3">
                        Context: {question.context}
                      </p>
@@ -670,49 +734,260 @@ export const Interview: React.FC = () => {
   const renderReport = () => {
     if (!report) return null;
 
-    const scoreBarData = [
-      { name: 'Overall', score: report.overallScore, fill: 'hsl(239, 84%, 67%)' },
-      { name: 'Communication', score: report.communicationScore, fill: 'hsl(217, 91%, 60%)' },
-      { name: 'Technical', score: report.technicalScore, fill: 'hsl(262, 83%, 58%)' },
-      { name: 'JD Match', score: report.jdMatchScore || 0, fill: 'hsl(25, 95%, 53%)' },
+    // Dashboard chart data (vertical bars). JD Match is shown elsewhere; chart focuses on core dimensions.
+    const scoreBarData: { name: string; score: number }[] = [
+      { name: 'Overall', score: report.overallScore },
+      { name: 'Communication', score: report.communicationScore },
+      { name: 'Technical', score: report.technicalScore },
     ];
+    if (report.thinkingStructureScore != null) {
+      scoreBarData.push({ name: 'Thinking', score: report.thinkingStructureScore });
+    }
+    const thinkingScore = report.thinkingStructureScore ?? null;
+
     const strengthsCount = report.strengths.length;
     const weaknessesCount = report.weaknesses.length;
-    const pieDataRaw = [
-      { name: 'Strengths', value: strengthsCount, color: 'hsl(239, 84%, 67%)' },
-      { name: 'Areas to Improve', value: weaknessesCount, color: 'hsl(38, 92%, 50%)' },
-    ].filter((d) => d.value > 0);
-    const pieData = pieDataRaw.length > 0 ? pieDataRaw : [{ name: 'N/A', value: 1, color: 'hsl(0,0%,70%)' }];
+    const totalSW = strengthsCount + weaknessesCount;
+    const pieDataRaw =
+      totalSW > 0
+        ? [
+            {
+              name: 'Strengths',
+              value: Math.round((strengthsCount / totalSW) * 100),
+              color: 'hsl(239, 84%, 67%)',
+            },
+            {
+              name: 'Areas to Improve',
+              value: Math.round((weaknessesCount / totalSW) * 100),
+              color: 'hsl(38, 92%, 50%)',
+            },
+          ].filter((d) => d.value > 0)
+        : [];
+    const pieData = pieDataRaw.length > 0 ? pieDataRaw : [{ name: 'N/A', value: 100, color: 'hsl(0,0%,70%)' }];
+
+    // Interview level banner (derived from overall score)
+    let interviewLevel = 'Needs Improvement';
+    let levelColor = 'bg-orange-500';
+    if (report.overallScore >= 85) {
+      interviewLevel = 'Strong Hire';
+      levelColor = 'bg-emerald-500';
+    } else if (report.overallScore >= 70) {
+      interviewLevel = 'Hire';
+      levelColor = 'bg-blue-500';
+    } else if (report.overallScore >= 55) {
+      interviewLevel = 'Consider with Reservations';
+      levelColor = 'bg-amber-500';
+    }
+
+    const topStrengthPills = report.strengths.slice(0, 2);
+    const focusSource =
+      report.skillGapAnalysis && report.skillGapAnalysis.length > 0 ? report.skillGapAnalysis : report.weaknesses;
+    const focusAreaPills = focusSource.slice(0, 2);
 
     return (
-      <div className="max-w-6xl mx-auto space-y-6 sm:space-y-8 animate-fade-in-up pb-12 sm:pb-20 px-4 sm:px-6">
+      <div ref={reportRef} className="max-w-6xl mx-auto space-y-6 sm:space-y-8 animate-fade-in-up pb-12 sm:pb-20 px-4 sm:px-6">
         <div className="text-center space-y-3 sm:space-y-4 pt-4 sm:pt-8">
            <Badge className="bg-green-100 text-green-800 hover:bg-green-200 border-green-200 px-3 sm:px-4 py-1 text-xs sm:text-sm">Evaluation Complete</Badge>
            <ResultTypingHeading />
            <p className="text-base sm:text-xl text-muted-foreground max-w-2xl mx-auto">Detailed breakdown of your mock interview session</p>
            
-           <Button 
-             onClick={handleDownloadReport} 
-             size="lg" 
-             variant="outline" 
-             className="mt-2 sm:mt-4 gap-2 h-10 sm:h-11 text-sm"
-           >
-             <Download className="h-4 w-4 sm:h-5 sm:w-5" /> Download Report
-           </Button>
+          <Button
+            onClick={handleDownloadReport}
+            size="lg"
+            variant="outline"
+            className="mt-2 sm:mt-4 gap-2 h-10 sm:h-11 text-sm"
+            disabled={downloadingReport}
+          >
+            {downloadingReport ? (
+              <>
+                <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" /> Preparing PDF...
+              </>
+            ) : (
+              <>
+                <Download className="h-4 w-4 sm:h-5 sm:w-5" /> Download PDF
+              </>
+            )}
+          </Button>
         </div>
 
-        {/* Executive Summary + Strengths/Weaknesses — no gap below */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-           <Card className="lg:col-span-2 border-indigo-100 shadow-lg">
-             <CardHeader className="pb-2 sm:pb-3">
-               <CardTitle className="text-lg sm:text-xl">Executive Summary</CardTitle>
-             </CardHeader>
-             <CardContent className="pt-0">
-               <p className="text-base sm:text-[18px] leading-relaxed text-muted-foreground">{report.summary}</p>
-             </CardContent>
-           </Card>
+        {/* 1. Dashboard overview — statistics & visual summary */}
+        <section className="space-y-4 sm:space-y-6" aria-labelledby="report-dashboard">
+          <h2 id="report-dashboard" className="text-lg sm:text-xl font-semibold text-foreground">Dashboard overview</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 sm:gap-4">
+             <ScoreCard title="Overall" score={report.overallScore} icon={BarChart} colorClass="text-indigo-600" />
+             <ScoreCard title="Communication" score={report.communicationScore} icon={MessageSquare} colorClass="text-blue-500" />
+             <ScoreCard title="Technical" score={report.technicalScore} icon={Cpu} colorClass="text-purple-500" />
+             <ScoreCard title="JD Match" score={report.jdMatchScore ?? 0} icon={Target} colorClass="text-orange-500" />
+             {report.thinkingStructureScore != null && (
+               <ScoreCard title="Thinking" score={report.thinkingStructureScore} icon={Lightbulb} colorClass="text-cyan-500" />
+             )}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+            <Card className="overflow-hidden">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base sm:text-lg">Score Overview</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="h-56 sm:h-64 w-full min-h-[200px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsBarChart
+                      data={scoreBarData}
+                      layout="vertical"
+                      margin={{ left: 12, right: 12, top: 8, bottom: 8 }}
+                    >
+                      <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 12 }} />
+                      <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 12 }} />
+                      <Tooltip formatter={(value: number) => `${value}%`} />
+                      <Bar dataKey="score" radius={[0, 4, 4, 0]} />
+                    </RechartsBarChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="overflow-hidden">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base sm:text-lg">Strengths vs Areas to Improve</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="h-56 sm:h-64 w-full min-h-[200px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                    <Pie
+                      data={pieData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={70}
+                      label={({ name, value }) => `${name}: ${value}%`}
+                    >
+                        {pieData.map((entry, i) => (
+                          <Cell key={i} fill={entry.color} />
+                        ))}
+                      </Pie>
+                    <Tooltip formatter={(value: number) => `${value}%`} />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </section>
 
-           <div className="space-y-3 sm:space-y-4">
+        {/* 2. Overall score summary */}
+        <section className="space-y-2" aria-labelledby="report-overall">
+          <h2 id="report-overall" className="text-lg sm:text-xl font-semibold text-foreground">Overall score summary</h2>
+          <Card className="border-indigo-200 bg-indigo-50/30 overflow-hidden">
+            <CardContent className="py-6 sm:py-8 flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-8">
+              <div className="text-5xl sm:text-6xl md:text-7xl font-bold text-indigo-600">{report.overallScore}</div>
+              <div className="text-center sm:text-left">
+                <p className="text-base sm:text-lg font-medium text-foreground">out of 100</p>
+                <p className="text-sm text-muted-foreground mt-1">Composite score across communication, technical, and JD fit</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Interview level ribbon-style banner */}
+          <Card className="mt-3 sm:mt-4 border-none bg-transparent shadow-none">
+            <CardContent className="p-0 flex justify-center">
+              <div className="relative inline-flex items-center justify-center px-6 sm:px-10 py-3 sm:py-4 rounded-xl shadow-md bg-gradient-to-r from-orange-400 to-orange-500 text-white">
+                <div className="absolute -left-4 sm:-left-6 w-6 sm:w-8 h-6 sm:h-8 bg-orange-500 rounded-l-md rotate-[-6deg] opacity-80" aria-hidden />
+                <div className="absolute -right-4 sm:-right-6 w-6 sm:w-8 h-6 sm:h-8 bg-orange-500 rounded-r-md rotate-[6deg] opacity-80" aria-hidden />
+                <div className="relative text-center">
+                  <p className="text-xs sm:text-sm uppercase tracking-widest opacity-90">Interview Level</p>
+                  <p className="text-sm sm:text-lg md:text-xl font-semibold mt-1">{interviewLevel}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+
+        {/* 3. Summary of the candidate */}
+        <section className="space-y-2" aria-labelledby="report-summary">
+          <h2 id="report-summary" className="text-lg sm:text-xl font-semibold text-foreground">Summary of the candidate</h2>
+          <Card className="border-indigo-100 shadow-lg">
+            <CardHeader className="pb-2 sm:pb-3">
+              <CardTitle className="text-lg sm:text-xl">Executive Summary</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <p className="text-base sm:text-[18px] leading-relaxed text-muted-foreground">{report.summary}</p>
+            </CardContent>
+          </Card>
+        </section>
+
+        {/* 4. Detailed breakdown — strengths, weaknesses, skill gaps, etc. */}
+        <section className="space-y-4 sm:space-y-6" aria-labelledby="report-breakdown">
+          <h2 id="report-breakdown" className="text-lg sm:text-xl font-semibold text-foreground">Detailed breakdown</h2>
+
+          {/* Thinking structure bar card (JD-match style) */}
+          {thinkingScore != null && (
+            <Card className="border-sky-100 bg-sky-50/40">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sky-800 text-base sm:text-lg">Thinking Structure</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-2">
+                <div className="rounded-full bg-sky-100 h-6 sm:h-7 flex items-center px-1 sm:px-1.5 shadow-inner">
+                  <div className="flex-1 h-3 sm:h-3.5 bg-white rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-sky-500 transition-all duration-700"
+                      style={{ width: `${Math.max(0, Math.min(100, thinkingScore))}%` }}
+                    />
+                  </div>
+                  <span className="ml-3 sm:ml-4 mr-2 text-xs sm:text-sm font-semibold text-sky-900">
+                    {thinkingScore}%
+                  </span>
+                </div>
+                <p className="text-xs sm:text-sm text-sky-800/80">
+                  How clearly the candidate structures answers (logic, flow, and reasoning).
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Key points: strengths + focus areas pills */}
+          {(topStrengthPills.length > 0 || focusAreaPills.length > 0) && (
+            <Card className="border-slate-100 bg-slate-50/60">
+              <CardContent className="pt-4 pb-4 sm:pt-5 sm:pb-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+                  <div>
+                    <p className="text-xs sm:text-sm font-semibold text-slate-700 mb-2">Top strengths</p>
+                    <div className="flex flex-wrap gap-2">
+                      {topStrengthPills.map((item, idx) => (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center rounded-full bg-white border border-slate-200 px-3 py-1 text-xs sm:text-sm font-medium text-slate-800 shadow-sm"
+                        >
+                          {item}
+                        </span>
+                      ))}
+                      {topStrengthPills.length === 0 && (
+                        <span className="text-xs text-muted-foreground">Not enough data yet.</span>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs sm:text-sm font-semibold text-slate-700 mb-2">Focus areas</p>
+                    <div className="flex flex-wrap gap-2">
+                      {focusAreaPills.map((item, idx) => (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center rounded-full bg-white border border-slate-200 px-3 py-1 text-xs sm:text-sm font-medium text-slate-800 shadow-sm"
+                        >
+                          {item}
+                        </span>
+                      ))}
+                      {focusAreaPills.length === 0 && (
+                        <span className="text-xs text-muted-foreground">No major focus areas identified.</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
              <Card className="border-green-100 bg-green-50/30">
                <CardHeader className="pb-1 sm:pb-2">
                  <CardTitle className="text-green-700 text-base sm:text-lg flex items-center gap-2">
@@ -745,71 +1020,10 @@ export const Interview: React.FC = () => {
                  </ul>
                </CardContent>
              </Card>
-           </div>
-        </div>
+          </div>
 
-        {/* Bar & Pie Charts — directly below summary, no gap */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-          <Card className="overflow-hidden">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base sm:text-lg">Score Overview</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <div className="h-56 sm:h-64 w-full min-h-[200px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RechartsBarChart data={scoreBarData} layout="vertical" margin={{ left: 8, right: 8 }}>
-                    <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 12 }} />
-                    <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 12 }} />
-                    <Tooltip />
-                    <Bar dataKey="score" radius={[0, 4, 4, 0]} />
-                  </RechartsBarChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="overflow-hidden">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base sm:text-lg">Strengths vs Areas to Improve</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <div className="h-56 sm:h-64 w-full min-h-[200px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={70}
-                      label={({ name, value }) => `${name}: ${value}`}
-                    >
-                      {pieData.map((entry, i) => (
-                        <Cell key={i} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Score cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 sm:gap-4">
-           <ScoreCard title="Overall" score={report.overallScore} icon={BarChart} colorClass="text-indigo-600" />
-           <ScoreCard title="Communication" score={report.communicationScore} icon={MessageSquare} colorClass="text-blue-500" />
-           <ScoreCard title="Technical" score={report.technicalScore} icon={Cpu} colorClass="text-purple-500" />
-           <ScoreCard title="JD Match" score={report.jdMatchScore ?? 0} icon={Target} colorClass="text-orange-500" />
-           {report.thinkingStructureScore != null && (
-             <ScoreCard title="Thinking" score={report.thinkingStructureScore} icon={Lightbulb} colorClass="text-cyan-500" />
-           )}
-        </div>
-
-        {/* Skill Gap Analysis */}
-        {report.skillGapAnalysis && report.skillGapAnalysis.length > 0 && (
+          {/* Skill Gap, Hiring Probability, Suggested Improvements */}
+          {report.skillGapAnalysis && report.skillGapAnalysis.length > 0 && (
           <Card className="border-violet-200 bg-violet-50/30">
             <CardHeader className="pb-2">
               <CardTitle className="text-violet-800 text-base sm:text-lg flex items-center gap-2">
@@ -827,10 +1041,9 @@ export const Interview: React.FC = () => {
               </ul>
             </CardContent>
           </Card>
-        )}
+          )}
 
-        {/* Hiring Probability (if not in score cards) */}
-        {report.hiringProbability != null && (
+          {report.hiringProbability != null && (
           <Card className="border-emerald-200 bg-emerald-50/20">
             <CardContent className="py-4 sm:py-6 flex flex-col sm:flex-row items-start sm:items-center gap-4">
               <div className="text-3xl sm:text-4xl font-bold text-emerald-700">{report.hiringProbability}%</div>
@@ -840,10 +1053,9 @@ export const Interview: React.FC = () => {
               </div>
             </CardContent>
           </Card>
-        )}
+          )}
 
-        {/* Suggested Improvements */}
-        {report.improvementSuggestions && report.improvementSuggestions.length > 0 && (
+          {report.improvementSuggestions && report.improvementSuggestions.length > 0 && (
           <Card className="border-blue-100 bg-blue-50/30">
             <CardHeader className="pb-2 sm:pb-3">
               <CardTitle className="text-blue-700 flex items-center gap-2 text-base sm:text-lg">
@@ -861,15 +1073,12 @@ export const Interview: React.FC = () => {
               </ul>
             </CardContent>
           </Card>
-        )}
+          )}
+        </section>
 
-        {/* Detailed Breakdown */}
-        <div className="space-y-4 sm:space-y-6">
-           <div className="flex items-center gap-2 sm:gap-4">
-             <div className="h-px bg-border flex-1" aria-hidden />
-             <h2 className="text-lg sm:text-2xl font-bold text-foreground text-center">Question Analysis</h2>
-             <div className="h-px bg-border flex-1" aria-hidden />
-           </div>
+        {/* 5. Questions, answers & suggested answers */}
+        <section className="space-y-4 sm:space-y-6" aria-labelledby="report-questions">
+           <h2 id="report-questions" className="text-lg sm:text-xl font-semibold text-foreground">Question analysis</h2>
 
            <div className="grid gap-4 sm:gap-6">
              {report.questionEvaluations.map((item, idx) => (
@@ -920,7 +1129,7 @@ export const Interview: React.FC = () => {
                </Card>
              ))}
            </div>
-        </div>
+        </section>
 
         {/* Feedback after interview */}
         <Card className="border-primary/20 bg-primary/5">
@@ -957,8 +1166,22 @@ export const Interview: React.FC = () => {
         </Card>
         
         <div className="flex flex-col sm:flex-row justify-center gap-3 sm:gap-4 pt-4 sm:pt-8">
-           <Button onClick={handleDownloadReport} variant="outline" size="lg" className="rounded-full px-6 sm:px-8 h-11 sm:h-12 text-sm sm:text-base gap-2 order-2 sm:order-1">
-             <Download className="h-4 w-4 sm:h-5 sm:w-5" /> Download
+           <Button
+             onClick={handleDownloadReport}
+             variant="outline"
+             size="lg"
+             className="rounded-full px-6 sm:px-8 h-11 sm:h-12 text-sm sm:text-base gap-2 order-2 sm:order-1"
+             disabled={downloadingReport}
+           >
+             {downloadingReport ? (
+               <>
+                 <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" /> Preparing PDF...
+               </>
+             ) : (
+               <>
+                 <Download className="h-4 w-4 sm:h-5 sm:w-5" /> Download PDF
+               </>
+             )}
            </Button>
            <Button onClick={() => window.location.reload()} size="lg" className="rounded-full px-6 sm:px-8 h-11 sm:h-12 text-sm sm:text-base shadow-xl bg-indigo-600 hover:bg-indigo-700 order-1 sm:order-2">
              Start New Interview
@@ -968,8 +1191,54 @@ export const Interview: React.FC = () => {
     );
   };
 
+  const completedCount = questions.filter((q) => (answers[q.id] ?? '').trim().length > 0).length;
+
   return (
     <div className="min-h-[85vh]">
+      {/* End session modal */}
+      {showEndSessionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" role="dialog" aria-modal="true" aria-labelledby="end-session-title">
+          <div className="bg-background rounded-2xl shadow-xl max-w-md w-full p-6 sm:p-8 space-y-6">
+            <h2 id="end-session-title" className="text-xl font-semibold">End interview?</h2>
+            {completedCount >= 1 ? (
+              <>
+                <p className="text-muted-foreground">
+                  You have answered {completedCount} question{completedCount !== 1 ? 's' : ''}. Generate a partial report based on your answers, or save and resume later.
+                </p>
+                <div className="flex flex-col gap-3">
+                  <Button onClick={handleGeneratePartialReport} className="w-full bg-indigo-600 hover:bg-indigo-700">
+                    Generate partial report
+                  </Button>
+                  <Button onClick={handleResumeLater} variant="outline" className="w-full">
+                    Resume later
+                  </Button>
+                  <Button onClick={handleStartOver} variant="ghost" className="w-full text-muted-foreground">
+                    Start over
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-muted-foreground">
+                  Report can only be generated after completing the interview. You can save and resume later, or start over.
+                </p>
+                <div className="flex flex-col gap-3">
+                  <Button onClick={handleResumeLater} variant="outline" className="w-full">
+                    Resume later
+                  </Button>
+                  <Button onClick={handleStartOver} variant="ghost" className="w-full text-muted-foreground">
+                    Start over
+                  </Button>
+                </div>
+              </>
+            )}
+            <Button variant="ghost" size="sm" className="w-full" onClick={() => setShowEndSessionModal(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
       {status === InterviewStatus.IDLE && renderSetup()}
       {status === InterviewStatus.PARSING && (
          <div className="flex flex-col items-center justify-center h-[60vh] space-y-4 sm:space-y-6 animate-fade-in-up px-4">
@@ -988,9 +1257,11 @@ export const Interview: React.FC = () => {
           <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-red-100 flex items-center justify-center">
             <AlertCircle className="h-7 w-7 sm:h-8 sm:w-8 text-red-600" />
           </div>
-          <div className="text-center space-y-2">
+          <div className="text-center space-y-2 max-w-md">
             <h2 className="text-lg sm:text-xl font-semibold">Something went wrong</h2>
-            <p className="text-muted-foreground text-sm">Please check your API key and try again.</p>
+            <p className="text-muted-foreground text-sm sm:text-base">
+              {errorMessage || 'An unexpected error occurred. Please try again.'}
+            </p>
           </div>
           <Button onClick={() => window.location.reload()} className="bg-indigo-600 hover:bg-indigo-700">
             Try Again
