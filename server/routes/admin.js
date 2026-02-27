@@ -6,8 +6,10 @@ import { requireAuth } from '../middleware/auth.js';
 import { isDBConnected } from '../db.js';
 
 const router = Router();
-const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+// Dashboard login credentials
+// You can override these in the environment with ADMIN_USERNAME and ADMIN_PASSWORD
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'mockadmin';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'mock1234';
 
 router.post('/login', (req, res) => {
   const { username, password } = req.body;
